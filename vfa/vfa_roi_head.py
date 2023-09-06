@@ -10,68 +10,99 @@ from mmdet.core import bbox2roi
 from mmdet.models.builder import HEADS
 from mmfewshot.detection.models.roi_heads.meta_rcnn_roi_head import MetaRCNNRoIHead
 
+from vqvae2 import VectorQuantizedVAE, to_scalar
 
-class VAE(nn.Module):
 
-    def __init__(self,
-                 in_channels: int,
-                 latent_dim: int,
-                 hidden_dim: int) -> None:
-        super(VAE, self).__init__()
 
-        self.latent_dim = latent_dim
 
-        self.encoder = nn.Sequential(
-            nn.Linear(in_channels, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
-            nn.LeakyReLU()
-        )
-        self.fc_mu = nn.Linear(hidden_dim, latent_dim)
-        self.fc_var = nn.Linear(hidden_dim, latent_dim)
 
-        self.decoder_input = nn.Linear(latent_dim, hidden_dim)
+# class VAE(nn.Module):
+#
+#     def __init__(self,
+#                  in_channels: int,
+#                  latent_dim: int,
+#                  hidden_dim: int) -> None:
+#         super(VAE, self).__init__()
+#
+#         self.latent_dim = latent_dim
+#
+#         self.encoder = nn.Sequential(
+#             nn.Linear(in_channels, hidden_dim),
+#             nn.BatchNorm1d(hidden_dim),
+#             nn.LeakyReLU()
+#         )
+#         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
+#         self.fc_var = nn.Linear(hidden_dim, latent_dim)
+#
+#         self.decoder_input = nn.Linear(latent_dim, hidden_dim)
+#
+#         self.decoder = nn.Sequential(
+#             nn.Linear(hidden_dim, in_channels),
+#             nn.BatchNorm1d(in_channels),
+#             nn.Sigmoid()
+#         )
+#
+#     def encode(self, input: Tensor) -> List[Tensor]:
+#         result = self.encoder(input)
+#
+#         mu = self.fc_mu(result)
+#         log_var = self.fc_var(result)
+#
+#         return [mu, log_var]
+#
+#     def decode(self, z: Tensor) -> Tensor:
+#
+#         z = self.decoder_input(z)
+#         z_out = self.decoder(z)
+#         return z_out
+#
+#     def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
+#         std = torch.exp(0.5 * logvar)
+#         eps = torch.randn_like(std)
+#         return eps * std + mu, std + mu
+#
+#     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
+#         mu, log_var = self.encode(input)
+#         z, z_inv = self.reparameterize(mu, log_var)
+#         z_out = self.decode(z)
+#
+#         return [z_out, z_inv, input, mu, log_var]
+#
+#     def loss_function(self, input, rec, mu, log_var, kld_weight=0.00025) -> dict:
+#         recons_loss = F.mse_loss(rec, input)
+#
+#         kld_loss = torch.mean(-0.5 * torch.sum(1 +
+#                               log_var - mu ** 2 - log_var.exp(), dim=1), dim=0)
+#
+#         loss = recons_loss + kld_weight * kld_loss
+#
+#         return {'loss_vae': loss}
 
-        self.decoder = nn.Sequential(
-            nn.Linear(hidden_dim, in_channels),
-            nn.BatchNorm1d(in_channels),
-            nn.Sigmoid()
-        )
+# VQVAE
 
-    def encode(self, input: Tensor) -> List[Tensor]:
-        result = self.encoder(input)
-
-        mu = self.fc_mu(result)
-        log_var = self.fc_var(result)
-
-        return [mu, log_var]
-
-    def decode(self, z: Tensor) -> Tensor:
-
-        z = self.decoder_input(z)
-        z_out = self.decoder(z)
-        return z_out
-
-    def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return eps * std + mu, std + mu
-
-    def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
-        mu, log_var = self.encode(input)
-        z, z_inv = self.reparameterize(mu, log_var)
-        z_out = self.decode(z)
-
-        return [z_out, z_inv, input, mu, log_var]
-
-    def loss_function(self, input, rec, mu, log_var, kld_weight=0.00025) -> dict:
-        recons_loss = F.mse_loss(rec, input)
-
-        kld_loss = torch.mean(-0.5 * torch.sum(1 +
-                              log_var - mu ** 2 - log_var.exp(), dim=1), dim=0)
-
-        loss = recons_loss + kld_weight * kld_loss
-
-        return {'loss_vae': loss}
+# model = VectorQuantizedVAE(num_channels, args.hidden_size, args.k).to(args.device)
+#
+# # num_channels  图片的channel数
+# # args.hidden_size  size of the latent vectors==256
+# # args.k  number of latent vectors==512
+# # args.beta  0.25
+#
+# def train(data_loader, model, optimizer, args):
+#     for images, _ in data_loader:
+#         images = images.to(args.device)
+#
+#         optimizer.zero_grad()
+#         x_tilde, z_e_x, z_q_x = model(images)
+#
+#         # Reconstruction loss
+#         loss_recons = F.mse_loss(x_tilde, images)
+#         # Vector quantization objective
+#         loss_vq = F.mse_loss(z_q_x, z_e_x.detach())
+#         # Commitment objective
+#         loss_commit = F.mse_loss(z_e_x, z_q_x.detach())
+#
+#         loss = loss_recons + loss_vq + args.beta * loss_commit
+#         loss.backward()
 
 
 @HEADS.register_module()
@@ -80,7 +111,14 @@ class VFARoIHead(MetaRCNNRoIHead):
     def __init__(self, vae_dim=2048, *args, **kargs) -> None:
         super().__init__(*args, **kargs)
 
-        self.vae = VAE(vae_dim, vae_dim, vae_dim)
+        # self.vae = VAE(vae_dim, vae_dim, vae_dim)  # VQVAE
+        self.vae = VectorQuantizedVAE(2048, 256, 512)
+
+        # model = VectorQuantizedVAE(num_channels, args.hidden_size, args.k).to(args.device)
+        # num_channels  图片的channel数
+        # args.hidden_size  size of the latent vectors==256
+        # args.k  number of latent vectors==512
+        # args.beta  0.25
 
     def _bbox_forward_train(self, query_feats: List[Tensor],
                             support_feats: List[Tensor],
@@ -116,8 +154,11 @@ class VFARoIHead(MetaRCNNRoIHead):
         query_rois = bbox2roi([res.bboxes for res in sampling_results])
         query_roi_feats = self.extract_query_roi_feat(query_feats, query_rois)
         support_feat = self.extract_support_feats(support_feats)[0]
-        support_feat_rec, support_feat_inv, _, mu, log_var = self.vae(
-            support_feat)
+
+        # support_feat_rec, support_feat_inv, _, mu, log_var = self.vae(
+        #     support_feat)   # VQVAE的输入和输出
+        support_feat_rec, z_e_x, support_feat_inv = self.vae(support_feat)
+        # x_tilde, z_e_x, z_q_x = model(images)
 
         bbox_targets = self.bbox_head.get_targets(sampling_results,
                                                   query_gt_bboxes,
@@ -168,8 +209,10 @@ class VFARoIHead(MetaRCNNRoIHead):
                 torch.ones_like(meta_cls_labels))
             loss_bbox.update(loss_meta_cls)
 
-        loss_vae = self.vae.loss_function(
-            support_feat, support_feat_rec, mu, log_var)
+        # loss_vae = self.vae.loss_function(
+        #     support_feat, support_feat_rec, mu, log_var)   # VAE的loss函数
+        loss_vae = self.vae.loss_function(self, support_feat, support_feat_rec, z_e_x, support_feat_inv)
+
         loss_bbox.update(loss_vae)
 
         bbox_results.update(loss_bbox=loss_bbox)
@@ -237,10 +280,13 @@ class VFARoIHead(MetaRCNNRoIHead):
         num_classes = self.bbox_head.num_classes
         for class_id in support_feats_dict.keys():
             support_feat = support_feats_dict[class_id]
-            support_feat_rec, support_feat_inv, _, mu, log_var = self.vae(
-                support_feat)
+
+            # support_feat_rec, support_feat_inv, _, mu, log_var = self.vae(   # VQVAE的输出
+            #     support_feat)
+            support_feat_rec, z_e_x, support_feat_inv = self.vae(support_feat)
+
             bbox_results = self._bbox_forward(
-                query_roi_feats, support_feat_inv.sigmoid())
+                query_roi_feats, support_feat_inv.sigmoid())  # support变量
             cls_scores_dict[class_id] = \
                 bbox_results['cls_score'][:, class_id:class_id + 1]
             bbox_preds_dict[class_id] = \
