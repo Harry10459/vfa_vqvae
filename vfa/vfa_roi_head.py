@@ -112,7 +112,7 @@ class VFARoIHead(MetaRCNNRoIHead):
         super().__init__(*args, **kargs)
 
         # self.vae = VAE(vae_dim, vae_dim, vae_dim)  # VQVAE
-        self.vae = VectorQuantizedVAE(2048, 256, 512)
+        self.vae = VectorQuantizedVAE(2048, 2048, 512)
 
         # model = VectorQuantizedVAE(num_channels, args.hidden_size, args.k).to(args.device)
         # num_channels  图片的channel数
