@@ -10,7 +10,7 @@ from mmdet.core import bbox2roi
 from mmdet.models.builder import HEADS
 from mmfewshot.detection.models.roi_heads.meta_rcnn_roi_head import MetaRCNNRoIHead
 
-from vqvae2 import VectorQuantizedVAE, to_scalar
+from vqvae3 import VectorQuantizedVAE, to_scalar
 
 
 
@@ -112,7 +112,7 @@ class VFARoIHead(MetaRCNNRoIHead):
         super().__init__(*args, **kargs)
 
         # self.vae = VAE(vae_dim, vae_dim, vae_dim)  # VQVAE
-        self.vae = VectorQuantizedVAE(2048, 2048, 512)
+        self.vae = VectorQuantizedVAE(1, 2048, 512)
 
         # model = VectorQuantizedVAE(num_channels, args.hidden_size, args.k).to(args.device)
         # num_channels  图片的channel数
@@ -157,7 +157,7 @@ class VFARoIHead(MetaRCNNRoIHead):
 
         # support_feat_rec, support_feat_inv, _, mu, log_var = self.vae(
         #     support_feat)   # VQVAE的输入和输出
-        support_feat_rec, z_e_x, support_feat_inv = self.vae(support_feat)
+        support_feat_rec, z_e_x, support_feat_inv, support_feat_inv_onehot = self.vae(support_feat)
         # x_tilde, z_e_x, z_q_x = model(images)
 
         bbox_targets = self.bbox_head.get_targets(sampling_results,
@@ -183,7 +183,7 @@ class VFARoIHead(MetaRCNNRoIHead):
                 if support_gt_labels[i] == random_query_label:
                     bbox_results = self._bbox_forward(
                         query_roi_feats[start:end],
-                        support_feat_inv[i].sigmoid().unsqueeze(0))
+                        support_feat_inv_onehot[i].sigmoid().unsqueeze(0))
                     single_loss_bbox = self.bbox_head.loss(
                         bbox_results['cls_score'], bbox_results['bbox_pred'],
                         query_rois[start:end], labels[start:end],
@@ -283,10 +283,10 @@ class VFARoIHead(MetaRCNNRoIHead):
 
             # support_feat_rec, support_feat_inv, _, mu, log_var = self.vae(   # VQVAE的输出
             #     support_feat)
-            support_feat_rec, z_e_x, support_feat_inv = self.vae(support_feat)
+            support_feat_rec, z_e_x, support_feat_inv, support_feat_inv_onehot = self.vae(support_feat)
 
             bbox_results = self._bbox_forward(
-                query_roi_feats, support_feat_inv.sigmoid())  # support变量
+                query_roi_feats, support_feat_inv_onehot.sigmoid())  # support变量
             cls_scores_dict[class_id] = \
                 bbox_results['cls_score'][:, class_id:class_id + 1]
             bbox_preds_dict[class_id] = \
