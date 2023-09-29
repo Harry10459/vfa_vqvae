@@ -10,14 +10,82 @@ from mmdet.core import bbox2roi
 from mmdet.models.builder import HEADS
 from mmfewshot.detection.models.roi_heads.meta_rcnn_roi_head import MetaRCNNRoIHead
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
 from torch.distributions import kl_divergence
 
-from functions import vq, vq_st
+import torch
+from torch.autograd import Function
+
+
+class VectorQuantization(Function):
+    @staticmethod
+    def forward(ctx, inputs, codebook):
+        with torch.no_grad():
+            embedding_size = codebook.size(1)
+            inputs_size = inputs.size()
+            inputs_flatten = inputs.view(-1, embedding_size)
+
+            codebook_sqr = torch.sum(codebook ** 2, dim=1)
+            inputs_sqr = torch.sum(inputs_flatten ** 2, dim=1, keepdim=True)
+
+            # Compute the distances to the codebook
+            distances = torch.addmm(codebook_sqr + inputs_sqr,
+                                    inputs_flatten, codebook.t(), alpha=-2.0, beta=1.0)
+
+            _, indices_flatten = torch.min(distances, dim=1)
+            indices = indices_flatten.view(*inputs_size[:-1])
+            ctx.mark_non_differentiable(indices)
+
+            return indices
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        raise RuntimeError('Trying to call `.grad()` on graph containing '
+                           '`VectorQuantization`. The function `VectorQuantization` '
+                           'is not differentiable. Use `VectorQuantizationStraightThrough` '
+                           'if you want a straight-through estimator of the gradient.')
+
+
+class VectorQuantizationStraightThrough(Function):
+    @staticmethod
+    def forward(ctx, inputs, codebook):
+        indices = vq(inputs, codebook)
+        indices_flatten = indices.view(-1)
+        ctx.save_for_backward(indices_flatten, codebook)
+        ctx.mark_non_differentiable(indices_flatten)
+
+        codes_flatten = torch.index_select(codebook, dim=0,
+                                           index=indices_flatten)
+        codes = codes_flatten.view_as(inputs)
+
+        return (codes, indices_flatten)
+
+    @staticmethod
+    def backward(ctx, grad_output, grad_indices):
+        grad_inputs, grad_codebook = None, None
+
+        if ctx.needs_input_grad[0]:
+            # Straight-through estimator
+            grad_inputs = grad_output.clone()
+        if ctx.needs_input_grad[1]:
+            # Gradient wrt. the codebook
+            indices, codebook = ctx.saved_tensors
+            embedding_size = codebook.size(1)
+
+            grad_output_flatten = (grad_output.contiguous()
+                                   .view(-1, embedding_size))
+            grad_codebook = torch.zeros_like(codebook)
+            grad_codebook.index_add_(0, indices, grad_output_flatten)
+
+        return (grad_inputs, grad_codebook)
+
+vq = VectorQuantization.apply
+vq_st = VectorQuantizationStraightThrough.apply
+__all__ = [vq, vq_st]
+
 
 def to_scalar(arr):
     if type(arr) == list:
@@ -35,15 +103,16 @@ def weights_init(m):
         except AttributeError:
             print("Skipping initialization of ", classname)
 
+
 class VQEmbedding(nn.Module):
     def __init__(self, K, D):
         super().__init__()
         self.embedding = nn.Embedding(K, D)
-        self.embedding.weight.data.uniform_(-1./K, 1./K)
+        self.embedding.weight.data.uniform_(-1. / K, 1. / K)
         self.latent2one = nn.Conv1d(2048, 1, 1)
 
     def forward(self, z_e_x):
-        z_e_x_ = z_e_x.permute(0, 2, 1).contiguous() # 当调用contiguous()时，会强制拷贝一份tensor，让它的布局和从头创建的一模一样，但是两个tensor完全没有联系。
+        z_e_x_ = z_e_x.permute(0, 2, 1).contiguous()  # 当调用contiguous()时，会强制拷贝一份tensor，让它的布局和从头创建的一模一样，但是两个tensor完全没有联系。
         latents = vq(z_e_x_, self.embedding.weight)
         return latents
 
@@ -54,7 +123,7 @@ class VQEmbedding(nn.Module):
         z_q_x_onehot = self.latent2one(z_q_x)
 
         z_q_x_bar_flatten = torch.index_select(self.embedding.weight,
-            dim=0, index=indices)
+                                               dim=0, index=indices)
         z_q_x_bar_ = z_q_x_bar_flatten.view_as(z_e_x_)
         z_q_x_bar = z_q_x_bar_.permute(0, 2, 1).contiguous()
         z_q_x_bar_onehot = self.latent2one(z_q_x_bar)
@@ -115,7 +184,7 @@ class VectorQuantizedVAE(nn.Module):
         x_tilde = self.decoder(z_q_x)
         return x_tilde
 
-    def loss_function(self, images, x_tilde, z_e_x, z_q_x) :
+    def loss_function(self, images, x_tilde, z_e_x, z_q_x):
         # Reconstruction loss
         loss_recons = F.mse_loss(x_tilde, images)
         # Vector quantization objective
@@ -406,7 +475,6 @@ class VFARoIHead(MetaRCNNRoIHead):
             support_feat_3 = torch.unsqueeze(support_feat, 1)
             support_feat_rec, z_e_x, support_feat_inv, support_feat_inv_onehot = self.vae(support_feat_3)
             support_feat_inv_onehot = torch.squeeze(support_feat_inv_onehot, 1)
-
 
             bbox_results = self._bbox_forward(
                 query_roi_feats, support_feat_inv_onehot.sigmoid())  # support变量
