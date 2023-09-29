@@ -157,7 +157,10 @@ class VFARoIHead(MetaRCNNRoIHead):
 
         # support_feat_rec, support_feat_inv, _, mu, log_var = self.vae(
         #     support_feat)   # VQVAE的输入和输出
-        support_feat_rec, z_e_x, support_feat_inv, support_feat_inv_onehot = self.vae(support_feat)
+        support_feat_3 = torch.unsqueeze(support_feat, 1)
+        support_feat_rec, z_e_x, support_feat_inv, support_feat_inv_onehot = self.vae(support_feat_3)
+        support_feat_inv_onehot = torch.squeeze(support_feat_inv_onehot, 1)
+        support_feat_rec_2 = torch.squeeze(support_feat_rec, 1)
         # x_tilde, z_e_x, z_q_x = model(images)
 
         bbox_targets = self.bbox_head.get_targets(sampling_results,
@@ -202,7 +205,7 @@ class VFARoIHead(MetaRCNNRoIHead):
         # meta classification loss
         if self.bbox_head.with_meta_cls_loss:
             # input support feature classification
-            meta_cls_score = self.bbox_head.forward_meta_cls(support_feat_rec)
+            meta_cls_score = self.bbox_head.forward_meta_cls(support_feat_rec_2)
             meta_cls_labels = torch.cat(support_gt_labels)
             loss_meta_cls = self.bbox_head.loss_meta(
                 meta_cls_score, meta_cls_labels,
@@ -211,7 +214,7 @@ class VFARoIHead(MetaRCNNRoIHead):
 
         # loss_vae = self.vae.loss_function(
         #     support_feat, support_feat_rec, mu, log_var)   # VAE的loss函数
-        loss_vae = self.vae.loss_function(self, support_feat, support_feat_rec, z_e_x, support_feat_inv)
+        loss_vae = self.vae.loss_function(self, support_feat_3, support_feat_rec, z_e_x, support_feat_inv)
 
         loss_bbox.update(loss_vae)
 
@@ -283,7 +286,10 @@ class VFARoIHead(MetaRCNNRoIHead):
 
             # support_feat_rec, support_feat_inv, _, mu, log_var = self.vae(   # VQVAE的输出
             #     support_feat)
-            support_feat_rec, z_e_x, support_feat_inv, support_feat_inv_onehot = self.vae(support_feat)
+            support_feat_3 = torch.unsqueeze(support_feat, 1)
+            support_feat_rec, z_e_x, support_feat_inv, support_feat_inv_onehot = self.vae(support_feat_3)
+            support_feat_inv_onehot = torch.squeeze(support_feat_inv_onehot, 1)
+
 
             bbox_results = self._bbox_forward(
                 query_roi_feats, support_feat_inv_onehot.sigmoid())  # support变量

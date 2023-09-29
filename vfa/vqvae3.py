@@ -27,7 +27,7 @@ class VQEmbedding(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(K, D)
         self.embedding.weight.data.uniform_(-1./K, 1./K)
-        self.latent2one = nn.Conv1d(512, 1, 1)
+        self.latent2one = nn.Conv1d(2048, 1, 1)
 
     def forward(self, z_e_x):
         z_e_x_ = z_e_x.permute(0, 2, 1).contiguous() # 当调用contiguous()时，会强制拷贝一份tensor，让它的布局和从头创建的一模一样，但是两个tensor完全没有联系。
