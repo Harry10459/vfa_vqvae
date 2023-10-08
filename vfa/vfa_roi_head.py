@@ -109,7 +109,7 @@ class VQEmbedding(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(K, D)
         self.embedding.weight.data.uniform_(-1. / K, 1. / K)
-        self.latent2one = nn.Conv1d(2048, 1, 1)
+        self.latent2one = nn.Conv1d(512, 1, 1)
 
     def forward(self, z_e_x):
         z_e_x_ = z_e_x.permute(0, 2, 1).contiguous()  # 当调用contiguous()时，会强制拷贝一份tensor，让它的布局和从头创建的一模一样，但是两个tensor完全没有联系。
@@ -119,16 +119,16 @@ class VQEmbedding(nn.Module):
     def straight_through(self, z_e_x):
         z_e_x_ = z_e_x.permute(0, 2, 1).contiguous()
         z_q_x_, indices = vq_st(z_e_x_, self.embedding.weight.detach())
-        z_q_x = z_q_x_.permute(0, 2, 1).contiguous()
-        z_q_x_onehot = self.latent2one(z_q_x)
+        # z_q_x = z_q_x_.permute(0, 2, 1).contiguous()
+        z_q_x_onehot = self.latent2one(z_q_x_)
 
         z_q_x_bar_flatten = torch.index_select(self.embedding.weight,
                                                dim=0, index=indices)
         z_q_x_bar_ = z_q_x_bar_flatten.view_as(z_e_x_)
-        z_q_x_bar = z_q_x_bar_.permute(0, 2, 1).contiguous()
-        z_q_x_bar_onehot = self.latent2one(z_q_x_bar)
+        # z_q_x_bar = z_q_x_bar_.permute(0, 2, 1).contiguous()
+        z_q_x_bar_onehot = self.latent2one(z_q_x_bar_)
 
-        return z_q_x, z_q_x_onehot, z_q_x_bar, z_q_x_bar_onehot
+        return z_q_x_, z_q_x_onehot, z_q_x_bar_, z_q_x_bar_onehot
 
 
 class ResBlock(nn.Module):
