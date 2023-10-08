@@ -119,16 +119,16 @@ class VQEmbedding(nn.Module):
     def straight_through(self, z_e_x):
         z_e_x_ = z_e_x.permute(0, 2, 1).contiguous()
         z_q_x_, indices = vq_st(z_e_x_, self.embedding.weight.detach())
-        # z_q_x = z_q_x_.permute(0, 2, 1).contiguous()
+        z_q_x = z_q_x_.permute(0, 2, 1).contiguous()
         z_q_x_onehot = self.latent2one(z_q_x_)
 
         z_q_x_bar_flatten = torch.index_select(self.embedding.weight,
                                                dim=0, index=indices)
         z_q_x_bar_ = z_q_x_bar_flatten.view_as(z_e_x_)
-        # z_q_x_bar = z_q_x_bar_.permute(0, 2, 1).contiguous()
+        z_q_x_bar = z_q_x_bar_.permute(0, 2, 1).contiguous()
         z_q_x_bar_onehot = self.latent2one(z_q_x_bar_)
 
-        return z_q_x_, z_q_x_onehot, z_q_x_bar_, z_q_x_bar_onehot
+        return z_q_x, z_q_x_onehot, z_q_x_bar, z_q_x_bar_onehot
 
 
 class ResBlock(nn.Module):
@@ -400,7 +400,7 @@ class VFARoIHead(MetaRCNNRoIHead):
 
         # loss_vae = self.vae.loss_function(
         #     support_feat, support_feat_rec, mu, log_var)   # VAE的loss函数
-        loss_vae = self.vae.loss_function(self, support_feat_3, support_feat_rec, z_e_x, support_feat_inv)
+        loss_vae = self.vae.loss_function(support_feat_3, support_feat_rec, z_e_x, support_feat_inv)
 
         loss_bbox.update(loss_vae)
 
